@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/internal/k8sconfig"
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/k8sprocessor/observability"
 )
@@ -141,6 +142,9 @@ func (c *WatchClient) handlePodAdd(obj interface{}) {
 	observability.RecordPodAdded()
 	if pod, ok := obj.(*api_v1.Pod); ok {
 		c.addOrUpdatePod(pod)
+		fmt.Println("****************handlePodAdd*************************")
+		spew.Dump(c.Pods)
+		fmt.Println("********************************************************")
 	} else {
 		c.logger.Error("object received was not of type api_v1.Pod", zap.Any("received", obj))
 	}
@@ -151,8 +155,12 @@ func (c *WatchClient) handlePodAdd(obj interface{}) {
 func (c *WatchClient) handlePodUpdate(old, new interface{}) {
 	observability.RecordPodUpdated()
 	if pod, ok := new.(*api_v1.Pod); ok {
+
+		fmt.Println("****************handlePodUpdate*************************")
 		// TODO: update or remove based on whether container is ready/unready?.
 		c.addOrUpdatePod(pod)
+		spew.Dump(c.Pods)
+		fmt.Println("********************************************************")
 	} else {
 		c.logger.Error("object received was not of type api_v1.Pod", zap.Any("received", new))
 	}
@@ -218,10 +226,12 @@ func (c *WatchClient) GetPod(identifier PodIdentifier) (*Pod, bool) {
 	c.m.RUnlock()
 	if ok {
 		if pod.Ignore {
+			fmt.Println("********** GetPod *** pod.Ignore")
 			return nil, false
 		}
 		return pod, ok
 	}
+	fmt.Println("********** GetPod *** RecordIPLookupMiss")
 	observability.RecordIPLookupMiss()
 	return nil, false
 }
