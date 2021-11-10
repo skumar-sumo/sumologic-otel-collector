@@ -390,6 +390,7 @@ func (c *WatchClient) addOrUpdatePod(pod *api_v1.Pod) {
 	}
 
 	if c.shouldIgnorePod(pod) {
+		fmt.Println("************ addOrUpdatePod pod.Ignore=true", pod.Name)
 		newPod.Ignore = true
 	} else {
 		newPod.Attributes = c.extractPodAttributes(pod)
@@ -454,12 +455,14 @@ func (c *WatchClient) shouldIgnorePod(pod *api_v1.Pod) bool {
 	// host traffic (e.g, linkerd, flannel) instead of service business needs.
 	// We plan to support host network pods in future.
 	if pod.Spec.HostNetwork {
+		fmt.Println("shouldIgnorePod - HostNetwork", pod.Name)
 		return true
 	}
 
 	// Check if user requested the pod to be ignored through annotations
 	if v, ok := pod.Annotations[ignoreAnnotation]; ok {
 		if strings.ToLower(strings.TrimSpace(v)) == "true" {
+			fmt.Println("shouldIgnorePod - user requested the pod to be ignored through annotations", pod.Name)
 			return true
 		}
 	}
@@ -467,6 +470,7 @@ func (c *WatchClient) shouldIgnorePod(pod *api_v1.Pod) bool {
 	// Check well known names that should be ignored
 	for _, rexp := range podNameIgnorePatterns {
 		if rexp.MatchString(pod.Name) {
+			fmt.Println("shouldIgnorePod - well known names that should be ignored", pod.Name)
 			return true
 		}
 	}
