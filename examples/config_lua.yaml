@@ -5,7 +5,9 @@ receivers:
       cpu:
 
 processors:
-  lua: {}
+  lua:
+    script: "/sumologic/pkg/processor/luaprocessor/examples/script.lua"
+    function: "fib"
 
 exporters:
   logging:

@@ -12,6 +12,9 @@ import (
 const (
 	// The value of "type" key in configuration.
 	typeStr = "lua"
+
+	defaultScript   = "script.lua"
+	defaultFunction = "process"
 )
 
 var processorCapabilities = consumer.Capabilities{MutatesData: true}
@@ -31,6 +34,8 @@ func createDefaultConfig() config.Processor {
 	ps := config.NewProcessorSettings(config.NewComponentID(typeStr))
 	return &Config{
 		ProcessorSettings: &ps,
+		Script:            defaultScript,
+		Function:          defaultFunction,
 	}
 }
 
