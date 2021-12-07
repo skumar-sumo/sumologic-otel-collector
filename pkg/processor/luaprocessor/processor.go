@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"go.opentelemetry.io/collector/model/pdata"
+
+	glua "github.com/RyouZhang/go-lua"
 )
 
 type luaProcessor struct{}
@@ -17,6 +19,23 @@ func newLuaProcessor(cfg *Config) *luaProcessor {
 func (lp *luaProcessor) ProcessMetrics(ctx context.Context, md pdata.Metrics) (pdata.Metrics, error) {
 	// TODO: add processor logic here
 	fmt.Println("***Hello from Lua metrics processor***")
+	fmt.Println("Lua processor is processing metrics")
+	res, err := glua.NewAction().WithScript(`
+	function fib(n)
+		if n == 0 then
+			return 0
+		elseif n == 1 then
+			return 1
+		end
+		return fib(n-1) + fib(n-2)
+	end
+	`).WithEntrypoint("fib").AddParam(35).Execute(context.Background())
+
+	if err != nil {
+		return md, err
+	}
+
+	fmt.Println("*** lua processor Fib", res)
 
 	return md, nil
 }
