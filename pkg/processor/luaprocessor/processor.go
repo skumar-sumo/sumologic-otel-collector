@@ -25,14 +25,18 @@ func newLuaProcessor(cfg *Config) *luaProcessor {
 func (lp *luaProcessor) ProcessMetrics(ctx context.Context, md pdata.Metrics) (pdata.Metrics, error) {
 	// TODO: add processor logic here
 	fmt.Println("***Hello from Lua metrics processor***")
+
+	converter := NewMetricsLuaConverter(md)
+	params := converter.ConvertToLua()
+
 	fmt.Println("Lua processor, script: ", lp.script, ", function: ", lp.function)
-	res, err := glua.NewAction().WithScriptPath(lp.script).WithEntrypoint(lp.function).AddParam(35).Execute(context.Background())
+	res, err := glua.NewAction().WithScriptPath(lp.script).WithEntrypoint(lp.function).AddParam(params).Execute(context.Background())
 	if err != nil {
 		return md, err
 	}
 	fmt.Println("*** lua script returned", res)
 
-	return md, nil
+	return converter.ConvertFromLua(res)
 }
 
 // ProcessTraces processes traces
