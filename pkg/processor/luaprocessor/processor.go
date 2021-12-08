@@ -32,6 +32,7 @@ func (lp *luaProcessor) ProcessMetrics(ctx context.Context, md pdata.Metrics) (p
 	fmt.Println("Lua processor, script: ", lp.script, ", function: ", lp.function)
 	res, err := glua.NewAction().WithScriptPath(lp.script).WithEntrypoint(lp.function).AddParam(params).Execute(context.Background())
 	if err != nil {
+		fmt.Println(err)
 		return md, err
 	}
 	fmt.Println("*** lua script returned", res)

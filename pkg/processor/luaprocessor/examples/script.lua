@@ -19,8 +19,28 @@ function dump(o, indent)
   end
 end
 
-function process(m)
-    print(dump(m, ''))
-    return m
+function process(data)
+    if type(data) == 'table' then
+      resourceMetrics = data["resourceMetrics"]
+      for kResourceMetrics, vResourceMetrics in pairs(resourceMetrics) do
+        libraryMetrics = vResourceMetrics["libraryMetrics"]
+        for kLibraryMetrics, vLibraryMetrics in pairs(libraryMetrics) do
+          metrics = vLibraryMetrics["metrics"]
+          for kMetrics, vMetrics in pairs(metrics) do
+            dataPoints = vMetrics["sum"]["dataPoints"]
+            for kDataPoints, vDataPoints in pairs(dataPoints) do
+              dataPoint = vDataPoints
+              -- change startTimestamp
+              dataPoint["startTimestamp"] = 0
+              -- change value
+              dataPoint["value"] = 789
+              -- add attribute
+              dataPoint["attributes"]["lua"] = "true"
+            end
+          end
+        end
+      end
+    end
+    return data
 end
 
