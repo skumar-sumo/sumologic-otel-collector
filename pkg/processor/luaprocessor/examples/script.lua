@@ -19,27 +19,43 @@ function dump(o, indent)
   end
 end
 
-function process(data)
+function processMetrics(data)
+    print('Processing metrics')
     if type(data) == 'table' then
-      resourceMetrics = data["resourceMetrics"]
-      for kResourceMetrics, vResourceMetrics in pairs(resourceMetrics) do
-        libraryMetrics = vResourceMetrics["libraryMetrics"]
-        for kLibraryMetrics, vLibraryMetrics in pairs(libraryMetrics) do
-          metrics = vLibraryMetrics["metrics"]
-          for kMetrics, vMetrics in pairs(metrics) do
-            dataPoints = vMetrics["sum"]["dataPoints"]
-            for kDataPoints, vDataPoints in pairs(dataPoints) do
-              dataPoint = vDataPoints
-              -- change startTimestamp
-              dataPoint["startTimestamp"] = 0
-              -- change value
-              dataPoint["value"] = 789
-              -- add attribute
-              dataPoint["attributes"]["lua"] = "true"
+        resourceMetrics = data["resourceMetrics"]
+        for kResourceMetrics, vResourceMetrics in pairs(resourceMetrics) do
+            libraryMetrics = vResourceMetrics["libraryMetrics"]
+            for kLibraryMetrics, vLibraryMetrics in pairs(libraryMetrics) do
+                metrics = vLibraryMetrics["metrics"]
+                for kMetrics, vMetrics in pairs(metrics) do
+                    dataPoints = vMetrics["sum"]["dataPoints"]
+                    for kDataPoints, vDataPoints in pairs(dataPoints) do
+                        dataPoint = vDataPoints
+                        -- change startTimestamp
+                        dataPoint["startTimestamp"] = 0
+                        -- change value
+                        dataPoint["value"] = 789
+                        -- add attribute
+                        dataPoint["attributes"]["lua"] = "true"
+                    end
+                end
             end
-          end
         end
-      end
+    end
+    return data
+end
+
+function processLogs(data)
+    print('Processing logs')
+    print(dump(data, ''))
+    return data
+end
+
+function process(dataType, data)
+    if dataType == 'metrics' then
+        data = processMetrics(data)
+    elseif dataType == 'logs' then 
+        data = processLogs(data)
     end
     return data
 end

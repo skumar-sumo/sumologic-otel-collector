@@ -9,6 +9,82 @@ import (
 )
 
 // MetricsLuaConverter converts between lua and go
+type LogsLuaConverter struct {
+	logs *pdata.Logs
+}
+
+// NewLogsLuaConverter creates a new LogsLuaConverter.
+func NewLogsLuaConverter(logs pdata.Logs) LogsLuaConverter {
+	return LogsLuaConverter{logs: &logs}
+}
+
+// ConvertToLua converts Metrics data object to lua map representation
+func (cv LogsLuaConverter) ConvertToLua() map[string]interface{} {
+	resourceLogs := []interface{}{}
+	logs := cv.logs
+	rms := logs.ResourceLogs()
+	for i := 0; i < rms.Len(); i++ {
+		resourceLogs = append(resourceLogs, convertResourceLogsToLua(rms.At(i)))
+	}
+
+	return map[string]interface{}{
+		"logRecordCount": logs.LogRecordCount(),
+		"resourceLogs":   resourceLogs,
+	}
+}
+
+// ConvertFromLua converts back result from lua and updates logs data object
+func (cv LogsLuaConverter) ConvertFromLua(luaRs interface{}) (pdata.Logs, error) {
+	return *cv.logs, nil
+}
+
+// convertResourceMetricsToLua converts ResourceLogs to map representation
+func convertResourceLogsToLua(rl pdata.ResourceLogs) map[string]interface{} {
+	libraryLogs := []interface{}{}
+	ilms := rl.InstrumentationLibraryLogs()
+	for j := 0; j < ilms.Len(); j++ {
+		libraryLogs = append(libraryLogs, convertLibraryLogsToLua(ilms.At(j)))
+	}
+
+	return map[string]interface{}{
+		"schemaUrl":   rl.SchemaUrl(),
+		"resource":    convertResourceToLua(rl.Resource()),
+		"libraryLogs": libraryLogs,
+	}
+}
+
+// convertLibraryLogsToLua converts InstrumentationLibraryLogs to map representation
+func convertLibraryLogsToLua(llogs pdata.InstrumentationLibraryLogs) map[string]interface{} {
+	luaLogs := []interface{}{}
+	lsl := llogs.Logs()
+	for j := 0; j < lsl.Len(); j++ {
+		luaLogs = append(luaLogs, convertLogToLua(lsl.At(j)))
+	}
+
+	return map[string]interface{}{
+		"schemaUrl": llogs.SchemaUrl(),
+		"library":   convertInstrumentationLibraryToLua(llogs.InstrumentationLibrary()),
+		"metrics":   luaLogs,
+	}
+}
+
+// convertLogToLua converts LogRecord to map representation
+func convertLogToLua(lr pdata.LogRecord) map[string]interface{} {
+	return map[string]interface{}{
+		"timestamp":              uint64(lr.Timestamp()),
+		"traceID":                lr.TraceID().HexString(),
+		"spanID":                 lr.SpanID().HexString(),
+		"flags":                  uint64(lr.Flags()),
+		"severityText":           lr.SeverityText(),
+		"severityNumber":         int32(lr.SeverityNumber()),
+		"name":                   lr.Name(),
+		"body":                   convertAttributeValueToLua(lr.Body()),
+		"attributes":             lr.Attributes().AsRaw(),
+		"droppedAttributesCount": lr.DroppedAttributesCount(),
+	}
+}
+
+// MetricsLuaConverter converts between lua and go
 type MetricsLuaConverter struct {
 	metrics *pdata.Metrics
 }
@@ -682,6 +758,51 @@ func convertAttributesFromLua(attrs pdata.AttributeMap, lua map[string]interface
 			fmt.Println("Unknown Type!")
 		}
 	}
+}
+
+// convertAttributeValueToLua converts AttributeValue to map representation
+func convertAttributeValueToLua(lr pdata.AttributeValue) map[string]interface{} {
+	attrVal := map[string]interface{}{}
+
+	switch lr.Type() {
+	case pdata.AttributeValueTypeString:
+		attrVal["stringVal"] = lr.StringVal()
+	case pdata.AttributeValueTypeBool:
+		attrVal["boolVal"] = lr.BoolVal()
+	case pdata.AttributeValueTypeInt:
+		attrVal["intVal"] = lr.IntVal()
+	case pdata.AttributeValueTypeDouble:
+		attrVal["doubleVal"] = lr.DoubleVal()
+	case pdata.AttributeValueTypeMap:
+		attrVal["mapVal"] = convertAttributeMapToLua(lr.MapVal())
+	case pdata.AttributeValueTypeArray:
+		attrVal["arrayVal"] = convertAttributeValueSliceToLua(lr.SliceVal())
+	case pdata.AttributeValueTypeBytes:
+		attrVal["bytesVal"] = lr.BytesVal()
+	default:
+		fmt.Println("Type not supported:", lr.Type())
+	}
+
+	return attrVal
+}
+
+// convertAttributeMapToLua converts AttributeMap to map representation
+func convertAttributeMapToLua(attr pdata.AttributeMap) map[string]interface{} {
+	lua := map[string]interface{}{}
+	attr.Range(func(k string, v pdata.AttributeValue) bool {
+		lua[k] = convertAttributeValueToLua(v)
+		return true
+	})
+	return lua
+}
+
+// convertAttributeValueSliceToLua converts AttributeValueSlice to map representation
+func convertAttributeValueSliceToLua(sl pdata.AttributeValueSlice) []interface{} {
+	luaSl := []interface{}{}
+	for j := 0; j < sl.Len(); j++ {
+		luaSl = append(luaSl, convertAttributeValueToLua(sl.At(j)))
+	}
+	return luaSl
 }
 
 func extractMapValueFrom(in map[string]interface{}, key string) map[string]interface{} {

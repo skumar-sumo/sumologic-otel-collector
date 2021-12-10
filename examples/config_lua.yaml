@@ -3,6 +3,8 @@ receivers:
     collection_interval: 30s
     scrapers:
       cpu:
+  filelog:
+    include: [ /tmp/loggenerator-aws.log ]
 
 processors:
   lua:
@@ -15,6 +17,11 @@ exporters:
 
 service:
   pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [lua]
+      exporters: [logging]
+
     metrics:
       receivers: [hostmetrics]
       processors: [lua]
