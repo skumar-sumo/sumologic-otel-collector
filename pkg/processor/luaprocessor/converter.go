@@ -33,12 +33,22 @@ func (cv LogsLuaConverter) ConvertToLua() map[string]interface{} {
 	}
 }
 
-// ConvertFromLua converts back result from lua and updates logs data object
+// ConvertFromLua converts lua representation to Logs
 func (cv LogsLuaConverter) ConvertFromLua(luaRs interface{}) (pdata.Logs, error) {
-	return *cv.logs, nil
+	luaRsMap := luaRs.(map[string]interface{})
+	rs := pdata.NewLogs()
+
+	luaResourceLogs := luaRsMap["resourceLogs"].([]interface{})
+	resourceLogsSlice := rs.ResourceLogs()
+	resourceLogsSlice.EnsureCapacity(len(luaResourceLogs))
+	for _, luaResourceLog := range luaResourceLogs {
+		convertResourceLogsFromLua(resourceLogsSlice.AppendEmpty(), luaResourceLog.(map[string]interface{}))
+	}
+
+	return rs, nil
 }
 
-// convertResourceMetricsToLua converts ResourceLogs to map representation
+// convertResourceLogsToLua converts ResourceLogs to map representation
 func convertResourceLogsToLua(rl pdata.ResourceLogs) map[string]interface{} {
 	libraryLogs := []interface{}{}
 	ilms := rl.InstrumentationLibraryLogs()
@@ -53,6 +63,24 @@ func convertResourceLogsToLua(rl pdata.ResourceLogs) map[string]interface{} {
 	}
 }
 
+// convertResourceLogsFromLua converts from lua and fills ResourceLogs
+func convertResourceLogsFromLua(rl pdata.ResourceLogs, lua map[string]interface{}) {
+	if schemaUrl, ok := lua["schemaUrl"]; ok {
+		rl.SetSchemaUrl(schemaUrl.(string))
+	}
+
+	convertResourceFromLua(rl.Resource(), extractMapValueFrom(lua, "resource"))
+
+	ll := extractSliceValueFrom(lua, "libraryLogs")
+	libSlice := rl.InstrumentationLibraryLogs()
+	libSlice.EnsureCapacity(len(ll))
+	for _, luaLl := range ll {
+		withMap(luaLl, func(luaLlMap map[string]interface{}) {
+			convertLibraryLogsFromLua(libSlice.AppendEmpty(), luaLlMap)
+		})
+	}
+}
+
 // convertLibraryLogsToLua converts InstrumentationLibraryLogs to map representation
 func convertLibraryLogsToLua(llogs pdata.InstrumentationLibraryLogs) map[string]interface{} {
 	luaLogs := []interface{}{}
@@ -64,7 +92,25 @@ func convertLibraryLogsToLua(llogs pdata.InstrumentationLibraryLogs) map[string]
 	return map[string]interface{}{
 		"schemaUrl": llogs.SchemaUrl(),
 		"library":   convertInstrumentationLibraryToLua(llogs.InstrumentationLibrary()),
-		"metrics":   luaLogs,
+		"logs":      luaLogs,
+	}
+}
+
+// convertLibraryLogsFromLua converts from lua and fills InstrumentationLibraryLogs
+func convertLibraryLogsFromLua(ll pdata.InstrumentationLibraryLogs, lua map[string]interface{}) {
+	if schemaUrl, ok := lua["schemaUrl"]; ok {
+		ll.SetSchemaUrl(schemaUrl.(string))
+	}
+
+	convertInstrumentationLibraryFromLua(ll.InstrumentationLibrary(), extractMapValueFrom(lua, "library"))
+
+	logs := extractSliceValueFrom(lua, "logs")
+	lSlice := ll.Logs()
+	lSlice.EnsureCapacity(len(logs))
+	for _, log := range logs {
+		withMap(log, func(logMap map[string]interface{}) {
+			convertLogFromLua(lSlice.AppendEmpty(), logMap)
+		})
 	}
 }
 
@@ -79,8 +125,50 @@ func convertLogToLua(lr pdata.LogRecord) map[string]interface{} {
 		"severityNumber":         int32(lr.SeverityNumber()),
 		"name":                   lr.Name(),
 		"body":                   convertAttributeValueToLua(lr.Body()),
-		"attributes":             lr.Attributes().AsRaw(),
+		"attributes":             convertAttributeMapToLua(lr.Attributes()),
 		"droppedAttributesCount": lr.DroppedAttributesCount(),
+	}
+}
+
+// convertLogFromLua converts from lua and fills LogRecord
+func convertLogFromLua(lr pdata.LogRecord, lua map[string]interface{}) {
+	if timestamp, ok := lua["timestamp"]; ok {
+		lr.SetTimestamp(pdata.Timestamp(uint64(timestamp.(int64))))
+	}
+
+	if traceID, ok := lua["traceID"]; ok {
+		if id, err := convertTraceIdFromLua(traceID.(string)); err == nil {
+			lr.SetTraceID(id)
+		}
+	}
+	if spanID, ok := lua["spanID"]; ok {
+		if id, err := convertSpanIdFromLua(spanID.(string)); err == nil {
+			lr.SetSpanID(id)
+		}
+	}
+
+	if flags, ok := lua["flags"]; ok {
+		lr.SetFlags(uint32(flags.(int64)))
+	}
+
+	if severityText, ok := lua["severityText"]; ok {
+		lr.SetSeverityText(severityText.(string))
+	}
+
+	if severityNumber, ok := lua["severityNumber"]; ok {
+		lr.SetSeverityNumber(pdata.SeverityNumber(int32(severityNumber.(int64))))
+	}
+
+	convertAttributeValueFromLua(extractMapValueFrom(lua, "body")).CopyTo(lr.Body())
+
+	if name, ok := lua["name"]; ok {
+		lr.SetName(name.(string))
+	}
+
+	convertAttributeMapFromLua(lr.Attributes(), extractMapValueFrom(lua, "attributes"))
+
+	if droppedAttributesCount, ok := lua["droppedAttributesCount"]; ok {
+		lr.SetDroppedAttributesCount(uint32(droppedAttributesCount.(int64)))
 	}
 }
 
@@ -282,7 +370,7 @@ func convertMetricNumberDataPointSliceFromLua(dp pdata.NumberDataPointSlice, lua
 // convertMetricNumberDataPointToLua converts NumberDataPoint to map representation
 func convertMetricNumberDataPointToLua(dp pdata.NumberDataPoint) map[string]interface{} {
 	return map[string]interface{}{
-		"attributes":     dp.Attributes().AsRaw(),
+		"attributes":     convertAttributeMapToLua(dp.Attributes()),
 		"startTimestamp": uint64(dp.StartTimestamp()),
 		"timestamp":      uint64(dp.Timestamp()),
 		"value":          dp.DoubleVal(),
@@ -306,7 +394,7 @@ func convertMetricNumberDataPointFromLua(dp pdata.NumberDataPoint, lua map[strin
 		dp.SetFlags(pdata.MetricDataPointFlags(uint64(flags.(int64))))
 	}
 
-	convertAttributesFromLua(dp.Attributes(), extractMapValueFrom(lua, "attributes"))
+	convertAttributeMapFromLua(dp.Attributes(), extractMapValueFrom(lua, "attributes"))
 	convertMetricExemplarSliceFromLua(dp.Exemplars(), extractSliceValueFrom(lua, "exemplars"))
 
 	if value, ok := lua["value"]; ok {
@@ -380,7 +468,7 @@ func convertMetricHistogramFromLua(m pdata.Histogram, lua map[string]interface{}
 // convertMetricHistogramDataPointToLua converts HistogramDataPoint to map representation
 func convertMetricHistogramDataPointToLua(dp pdata.HistogramDataPoint) map[string]interface{} {
 	return map[string]interface{}{
-		"attributes":     dp.Attributes().AsRaw(),
+		"attributes":     convertAttributeMapToLua(dp.Attributes()),
 		"startTimestamp": uint64(dp.StartTimestamp()),
 		"timestamp":      uint64(dp.Timestamp()),
 		"count":          dp.Count(),
@@ -394,7 +482,7 @@ func convertMetricHistogramDataPointToLua(dp pdata.HistogramDataPoint) map[strin
 
 // convertMetricHistogramDataPointFromLua converts from lua and fills HistogramDataPoint
 func convertMetricHistogramDataPointFromLua(dp pdata.HistogramDataPoint, lua map[string]interface{}) {
-	convertAttributesFromLua(dp.Attributes(), extractMapValueFrom(lua, "attributes"))
+	convertAttributeMapFromLua(dp.Attributes(), extractMapValueFrom(lua, "attributes"))
 
 	if startTimestamp, ok := lua["startTimestamp"]; ok {
 		dp.SetStartTimestamp(pdata.Timestamp(uint64(startTimestamp.(int64))))
@@ -462,7 +550,7 @@ func convertMetricExemplarSliceFromLua(ex pdata.ExemplarSlice, lua []interface{}
 // convertMetricExemplarToLua converts Exemplar to map representation
 func convertMetricExemplarToLua(ex pdata.Exemplar) map[string]interface{} {
 	return map[string]interface{}{
-		"attributes": ex.FilteredAttributes().AsRaw(),
+		"attributes": convertAttributeMapToLua(ex.FilteredAttributes()),
 		"timestamp":  uint64(ex.Timestamp()),
 		"value":      ex.DoubleVal(),
 		"traceID":    ex.TraceID().HexString(),
@@ -473,7 +561,7 @@ func convertMetricExemplarToLua(ex pdata.Exemplar) map[string]interface{} {
 // convertMetricExemplarFromLua converts from lua and fills Exemplar
 func convertMetricExemplarFromLua(ex pdata.Exemplar, lua map[string]interface{}) {
 
-	convertAttributesFromLua(ex.FilteredAttributes(), extractMapValueFrom(lua, "attributes"))
+	convertAttributeMapFromLua(ex.FilteredAttributes(), extractMapValueFrom(lua, "attributes"))
 
 	if timestamp, ok := lua["timestamp"]; ok {
 		ex.SetTimestamp(pdata.Timestamp(uint64(timestamp.(int64))))
@@ -492,18 +580,34 @@ func convertMetricExemplarFromLua(ex pdata.Exemplar, lua map[string]interface{})
 	}
 
 	if traceID, ok := lua["traceID"]; ok {
-		if bytes, err := hex.DecodeString(traceID.(string)); err == nil {
-			var bytesArr [16]byte
-			copy(bytesArr[:], bytes[:16])
-			ex.SetTraceID(pdata.NewTraceID(bytesArr))
+		if id, err := convertTraceIdFromLua(traceID.(string)); err == nil {
+			ex.SetTraceID(id)
 		}
 	}
 	if spanID, ok := lua["spanID"]; ok {
-		if bytes, err := hex.DecodeString(spanID.(string)); err == nil {
-			var bytesArr [8]byte
-			copy(bytesArr[:], bytes[:8])
-			ex.SetSpanID(pdata.NewSpanID(bytesArr))
+		if id, err := convertSpanIdFromLua(spanID.(string)); err == nil {
+			ex.SetSpanID(id)
 		}
+	}
+}
+
+func convertTraceIdFromLua(traceID string) (pdata.TraceID, error) {
+	if bytes, err := hex.DecodeString(traceID); err == nil {
+		var bytesArr [16]byte
+		copy(bytesArr[:], bytes[:16])
+		return pdata.NewTraceID(bytesArr), nil
+	} else {
+		return pdata.InvalidTraceID(), err
+	}
+}
+
+func convertSpanIdFromLua(spanID string) (pdata.SpanID, error) {
+	if bytes, err := hex.DecodeString(spanID); err == nil {
+		var bytesArr [8]byte
+		copy(bytesArr[:], bytes[:8])
+		return pdata.NewSpanID(bytesArr), nil
+	} else {
+		return pdata.InvalidSpanID(), err
 	}
 }
 
@@ -548,7 +652,7 @@ func convertMetricExponentialHistogramDataPointToLua(dp pdata.ExponentialHistogr
 	}
 
 	return map[string]interface{}{
-		"attributes":     dp.Attributes().AsRaw(),
+		"attributes":     convertAttributeMapToLua(dp.Attributes()),
 		"startTimestamp": uint64(dp.StartTimestamp()),
 		"timestamp":      uint64(dp.Timestamp()),
 		"count":          dp.Count(),
@@ -565,7 +669,7 @@ func convertMetricExponentialHistogramDataPointToLua(dp pdata.ExponentialHistogr
 // convertMetricExponentialHistogramDataPointFromLua converts from lua and fills ExponentialHistogramDataPoint
 func convertMetricExponentialHistogramDataPointFromLua(dp pdata.ExponentialHistogramDataPoint, lua map[string]interface{}) {
 
-	convertAttributesFromLua(dp.Attributes(), extractMapValueFrom(lua, "attributes"))
+	convertAttributeMapFromLua(dp.Attributes(), extractMapValueFrom(lua, "attributes"))
 
 	if startTimestamp, ok := lua["startTimestamp"]; ok {
 		dp.SetStartTimestamp(pdata.Timestamp(uint64(startTimestamp.(int64))))
@@ -643,7 +747,7 @@ func convertMetricSummaryDataPointToLua(dp pdata.SummaryDataPoint) map[string]in
 	}
 
 	return map[string]interface{}{
-		"attributes":     dp.Attributes().AsRaw(),
+		"attributes":     convertAttributeMapToLua(dp.Attributes()),
 		"startTimestamp": uint64(dp.StartTimestamp()),
 		"timestamp":      uint64(dp.Timestamp()),
 		"count":          dp.Count(),
@@ -665,7 +769,7 @@ func convertMetricSummaryDataPointFromLua(m pdata.SummaryDataPoint, lua map[stri
 		})
 	}
 
-	convertAttributesFromLua(m.Attributes(), extractMapValueFrom(lua, "attributes"))
+	convertAttributeMapFromLua(m.Attributes(), extractMapValueFrom(lua, "attributes"))
 
 	if startTimestamp, ok := lua["startTimestamp"]; ok {
 		m.SetStartTimestamp(pdata.Timestamp(uint64(startTimestamp.(int64))))
@@ -728,36 +832,13 @@ func convertInstrumentationLibraryFromLua(il pdata.InstrumentationLibrary, lua m
 // convertResourceToLua converts Resource to map representation
 func convertResourceToLua(rs pdata.Resource) map[string]interface{} {
 	return map[string]interface{}{
-		"attributes": rs.Attributes().AsRaw(),
+		"attributes": convertAttributeMapToLua(rs.Attributes()),
 	}
 }
 
 // convertResourceFromLua converts from lua and fills Resource
 func convertResourceFromLua(rs pdata.Resource, rsLua map[string]interface{}) {
-	convertAttributesFromLua(rs.Attributes(), extractMapValueFrom(rsLua, "attributes"))
-}
-
-// convertAttributesFromLua converts Resource to map representation
-func convertAttributesFromLua(attrs pdata.AttributeMap, lua map[string]interface{}) {
-	attrs.EnsureCapacity(len(lua))
-	for k, v := range lua {
-		switch t := v.(type) {
-		case int64:
-			attrs.InsertInt(k, t)
-		case float64:
-			attrs.InsertDouble(k, t)
-		case string:
-			attrs.InsertString(k, t)
-		case nil:
-			attrs.InsertNull(k)
-		case bool:
-			attrs.InsertBool(k, t)
-		case []byte:
-			attrs.InsertBytes(k, t)
-		default:
-			fmt.Println("Unknown Type!")
-		}
-	}
+	convertAttributeMapFromLua(rs.Attributes(), extractMapValueFrom(rsLua, "attributes"))
 }
 
 // convertAttributeValueToLua converts AttributeValue to map representation
@@ -786,6 +867,41 @@ func convertAttributeValueToLua(lr pdata.AttributeValue) map[string]interface{} 
 	return attrVal
 }
 
+// convertAttributeValueFromLua converts from lua to AttributeValue
+func convertAttributeValueFromLua(lua map[string]interface{}) pdata.AttributeValue {
+	if stringVal, ok := lua["stringVal"]; ok {
+		return pdata.NewAttributeValueString(stringVal.(string))
+	}
+	if boolVal, ok := lua["boolVal"]; ok {
+		return pdata.NewAttributeValueBool(boolVal.(bool))
+	}
+	if intVal, ok := lua["intVal"]; ok {
+		return pdata.NewAttributeValueInt(intVal.(int64))
+	}
+	if doubleVal, ok := lua["doubleVal"]; ok {
+		return pdata.NewAttributeValueDouble(doubleVal.(float64))
+	}
+	if mapVal, ok := lua["mapVal"]; ok {
+		m := pdata.NewAttributeValueMap()
+		convertAttributeMapFromLua(m.MapVal(), mapVal.(map[string]interface{}))
+		return m
+	}
+	if arrayVal, ok := lua["arrayVal"]; ok {
+		s := pdata.NewAttributeValueArray()
+		convertAttributeValueSliceFromLua(s.SliceVal(), arrayVal.([]interface{}))
+		return s
+	}
+	if bytesVal, ok := lua["bytesVal"]; ok {
+		bytesValInterface := bytesVal.([]interface{})
+		var bytes = make([]byte, len(bytesValInterface), len(bytesValInterface))
+		for idx, byteValInterface := range bytesValInterface {
+			bytes[idx] = byte(byteValInterface.(int64))
+		}
+		return pdata.NewAttributeValueBytes(bytes)
+	}
+	return pdata.NewAttributeValueEmpty()
+}
+
 // convertAttributeMapToLua converts AttributeMap to map representation
 func convertAttributeMapToLua(attr pdata.AttributeMap) map[string]interface{} {
 	lua := map[string]interface{}{}
@@ -796,6 +912,14 @@ func convertAttributeMapToLua(attr pdata.AttributeMap) map[string]interface{} {
 	return lua
 }
 
+// convertAttributeMapFromLua converts from lua and fills AttributeMap
+func convertAttributeMapFromLua(attr pdata.AttributeMap, lua map[string]interface{}) {
+	attr.EnsureCapacity(len(lua))
+	for k, v := range lua {
+		attr.Insert(k, convertAttributeValueFromLua(v.(map[string]interface{})))
+	}
+}
+
 // convertAttributeValueSliceToLua converts AttributeValueSlice to map representation
 func convertAttributeValueSliceToLua(sl pdata.AttributeValueSlice) []interface{} {
 	luaSl := []interface{}{}
@@ -803,6 +927,14 @@ func convertAttributeValueSliceToLua(sl pdata.AttributeValueSlice) []interface{}
 		luaSl = append(luaSl, convertAttributeValueToLua(sl.At(j)))
 	}
 	return luaSl
+}
+
+// convertAttributeValueSliceFromLua converts from lua and fills AttributeValueSlice
+func convertAttributeValueSliceFromLua(attr pdata.AttributeValueSlice, lua []interface{}) {
+	attr.EnsureCapacity(len(lua))
+	for _, v := range lua {
+		convertAttributeValueFromLua(v.(map[string]interface{})).CopyTo(attr.AppendEmpty())
+	}
 }
 
 func extractMapValueFrom(in map[string]interface{}, key string) map[string]interface{} {

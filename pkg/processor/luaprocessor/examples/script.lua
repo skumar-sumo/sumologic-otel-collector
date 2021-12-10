@@ -36,7 +36,7 @@ function processMetrics(data)
                         -- change value
                         dataPoint["value"] = 789
                         -- add attribute
-                        dataPoint["attributes"]["lua"] = "true"
+                        dataPoint["attributes"]["lua"] = {stringVal = "true"}
                     end
                 end
             end
@@ -47,11 +47,32 @@ end
 
 function processLogs(data)
     print('Processing logs')
-    print(dump(data, ''))
+    if type(data) == 'table' then
+        resourceLogs = data["resourceLogs"]
+        for kResourceLogs, vResourceLogs in pairs(resourceLogs) do
+            resource = vResourceLogs["resource"]
+            resource["attributes"]["allTheTypes"] = {mapVal = {
+                    obviously = {stringVal = "a string value"},
+                    coin = {boolVal = false},
+                    theAnswer = {intVal = 42},
+                    theAnswerEnhanced = {doubleVal = 42.1},
+                    everybody = {arrayVal = {{stringVal = "one"}, {stringVal = "two"}, {stringVal = "three"}}},
+                    thisIs = {bytesVal = {45, 55, 12}},
+            }}
+            libraryLogs = vResourceLogs["libraryLogs"]
+            for kLibraryLogs, vLibraryLogs in pairs(libraryLogs) do
+                logs = vLibraryLogs["logs"]
+                for kLogs, vLogs in pairs(logs) do
+                    vLogs["attributes"]["lua"] = {stringVal = "true"}
+                end
+            end
+        end
+    end
     return data
 end
 
 function process(dataType, data)
+    print(dump(data, ''))
     if dataType == 'metrics' then
         data = processMetrics(data)
     elseif dataType == 'logs' then 
