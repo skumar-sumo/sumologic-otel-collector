@@ -1,3 +1,4 @@
 cmd/*
 !cmd/collector_config_test.go
 !cmd/testdata/
+!cmd/fips.go
